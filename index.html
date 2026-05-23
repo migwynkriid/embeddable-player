@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta http-equiv="X-Frame-Options" content="ALLOWALL">
+    <meta name="referrer" content="no-referrer">
+    <title>Live Stream Player</title>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #000;
+        }
+        
+        #video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            background: #000;
+        }
+    </style>
+</head>
+<body>
+    <video id="video" autoplay muted playsinline></video>
+    
+    <script>
+        const videoSrc = 'https://streamer.nknews.org/tvhls/stream.m3u8';
+        const video = document.getElementById('video');
+        
+        function requestFullscreen() {
+            const elem = document.documentElement;
+            if (elem.requestFullscreen) {
+                elem.requestFullscreen().catch(() => {});
+            } else if (elem.webkitRequestFullscreen) {
+                elem.webkitRequestFullscreen();
+            } else if (elem.msRequestFullscreen) {
+                elem.msRequestFullscreen();
+            }
+        }
+        
+        function initPlayer() {
+            if (Hls.isSupported()) {
+                const hls = new Hls({
+                    autoStartLoad: true,
+                    startLevel: -1,
+                    debug: false
+                });
+                
+                hls.loadSource(videoSrc);
+                hls.attachMedia(video);
+                
+                hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                    video.play().then(() => {
+                        requestFullscreen();
+                    }).catch(() => {
+                        // Autoplay blocked, try muted
+                        video.muted = true;
+                        video.play().then(() => {
+                            requestFullscreen();
+                        });
+                    });
+                });
+                
+                hls.on(Hls.Events.ERROR, function(event, data) {
+                    if (data.fatal) {
+                        switch(data.type) {
+                            case Hls.ErrorTypes.NETWORK_ERROR:
+                                console.log('Network error, trying to recover...');
+                                hls.startLoad();
+                                break;
+                            case Hls.ErrorTypes.MEDIA_ERROR:
+                                console.log('Media error, trying to recover...');
+                                hls.recoverMediaError();
+                                break;
+                            default:
+                                hls.destroy();
+                                break;
+                        }
+                    }
+                });
+            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                // Native HLS support (Safari)
+                video.src = videoSrc;
+                video.addEventListener('loadedmetadata', function() {
+                    video.play().then(() => {
+                        requestFullscreen();
+                    }).catch(() => {
+                        video.muted = true;
+                        video.play().then(() => {
+                            requestFullscreen();
+                        });
+                    });
+                });
+            }
+        }
+        
+        // Initialize on load
+        document.addEventListener('DOMContentLoaded', initPlayer);
+    </script>
+</body>
+</html>
