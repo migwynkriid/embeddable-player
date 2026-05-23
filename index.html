@@ -50,50 +50,132 @@
         const showControls = urlParams.has('controls');
         
         document.addEventListener('DOMContentLoaded', function() {
+            let retryCount = 0;
+            const maxRetries = 10;
+            const baseRetryDelay = 2000; // 2 seconds
+            let stallCheckInterval;
+            let lastPlayPosition = 0;
+            let stallCount = 0;
+            
             const player = videojs('player', {
                 fluid: true,
-                autoplay: 'muted',  // Start muted for browser compatibility
+                autoplay: 'muted',
                 muted: true,
-                controls: showControls,  // Only show controls if ?controls in URL
+                controls: showControls,
                 preload: 'auto',
+                liveui: true,
                 html5: {
                     vhs: {
-                        overrideNative: true
+                        overrideNative: true,
+                        // Retry settings for segment fetching
+                        bandwidth: 5000000,
+                        enableLowInitialPlaylist: false,
+                        smoothQualityChange: true,
+                        allowSeeksWithinUnsafeLiveWindow: true,
+                        // Faster recovery
+                        maxPlaylistRetries: 10,
+                        handleManifestRedirects: true
                     },
                     nativeAudioTracks: false,
                     nativeVideoTracks: false
                 }
             });
             
-            player.ready(function() {
-                // Try to unmute after playback starts (works on kiosk Chrome with special flags)
-                player.on('playing', function() {
-                    console.log('Stream playing');
-                    // Attempt to unmute - will work on kiosk Chrome, silently fail on strict browsers
-                    try {
-                        player.muted(false);
-                    } catch(e) {
-                        console.log('Could not unmute:', e);
-                    }
-                });
-            });
-            
-            player.on('error', function(e) {
-                console.log('Player error:', player.error());
-                // Retry on error
+            // Reload stream function with exponential backoff
+            function reloadStream() {
+                if (retryCount >= maxRetries) {
+                    console.log('Max retries reached, waiting 30s before resetting...');
+                    retryCount = 0;
+                    setTimeout(reloadStream, 30000);
+                    return;
+                }
+                
+                const delay = Math.min(baseRetryDelay * Math.pow(1.5, retryCount), 15000);
+                retryCount++;
+                console.log(`Retry #${retryCount} in ${delay}ms...`);
+                
                 setTimeout(function() {
                     player.src({ src: '/stream/tvhls/stream.m3u8', type: 'application/x-mpegURL' });
-                    player.play();
-                }, 3000);
+                    player.load();
+                    player.play().catch(function() {
+                        player.muted(true);
+                        player.play();
+                    });
+                }, delay);
+            }
+            
+            // Reset retry count on successful playback
+            player.on('playing', function() {
+                console.log('Stream playing');
+                retryCount = 0;
+                stallCount = 0;
+                
+                // Try to unmute (works on kiosk Chrome with special flags)
+                try {
+                    player.muted(false);
+                } catch(e) {}
+            });
+            
+            // Handle errors
+            player.on('error', function(e) {
+                console.log('Player error:', player.error());
+                reloadStream();
+            });
+            
+            // Stall detection - if video freezes for too long
+            stallCheckInterval = setInterval(function() {
+                if (!player.paused() && player.readyState() >= 2) {
+                    const currentTime = player.currentTime();
+                    if (currentTime === lastPlayPosition && currentTime > 0) {
+                        stallCount++;
+                        console.log('Stall detected, count:', stallCount);
+                        if (stallCount >= 5) { // ~5 seconds of stall
+                            console.log('Stream stalled, reloading...');
+                            stallCount = 0;
+                            reloadStream();
+                        }
+                    } else {
+                        stallCount = 0;
+                    }
+                    lastPlayPosition = currentTime;
+                }
+            }, 1000);
+            
+            // Handle waiting/buffering
+            player.on('waiting', function() {
+                console.log('Buffering...');
+            });
+            
+            // Network offline/online detection
+            window.addEventListener('online', function() {
+                console.log('Network restored, reloading stream...');
+                retryCount = 0;
+                reloadStream();
+            });
+            
+            window.addEventListener('offline', function() {
+                console.log('Network lost');
+            });
+            
+            // Handle page visibility - pause when hidden, resume when visible
+            document.addEventListener('visibilitychange', function() {
+                if (document.hidden) {
+                    // Page hidden - optionally pause to save bandwidth
+                    // player.pause();
+                } else {
+                    // Page visible - ensure playing
+                    if (player.paused()) {
+                        player.play().catch(function() {});
+                    }
+                }
+            });
+            
+            // Cleanup on page unload
+            window.addEventListener('beforeunload', function() {
+                clearInterval(stallCheckInterval);
+                player.dispose();
             });
         });
-    </script>
-</body>
-</html>
-        }
-        
-        // Initialize on load
-        document.addEventListener('DOMContentLoaded', initPlayer);
     </script>
 </body>
 </html>
