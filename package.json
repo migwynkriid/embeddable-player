@@ -1,0 +1,11 @@
+{
+  "name": "embeddable-player",
+  "version": "1.0.0",
+  "description": "Embeddable M3U8 stream player with CORS proxy",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": ["hls", "m3u8", "player", "proxy", "stream"],
+  "license": "MIT"
+}
