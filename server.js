@@ -7,6 +7,10 @@ const TARGET_BASE = 'https://streamer.nknews.org';
 const ALLOWED_ORIGIN = 'https://kcnawatch.org';
 
 const server = http.createServer((req, res) => {
+    // Parse URL to handle query strings
+    const parsedUrl = url.parse(req.url, true);
+    const pathname = parsedUrl.pathname;
+    
     // Enable CORS for all origins
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -20,8 +24,8 @@ const server = http.createServer((req, res) => {
         return;
     }
 
-    // Serve the player HTML
-    if (req.url === '/' || req.url === '/index.html') {
+    // Serve the player HTML (handle /, /index.html, /?controls, etc.)
+    if (pathname === '/' || pathname === '/index.html') {
         const fs = require('fs');
         const path = require('path');
         const htmlPath = path.join(__dirname, 'index.html');
@@ -40,8 +44,8 @@ const server = http.createServer((req, res) => {
     }
 
     // Proxy stream requests
-    if (req.url.startsWith('/stream/')) {
-        const streamPath = req.url.replace('/stream', '');
+    if (pathname.startsWith('/stream/')) {
+        const streamPath = pathname.replace('/stream', '');
         const targetUrl = TARGET_BASE + streamPath;
         
         console.log(`Proxying: ${targetUrl}`);
